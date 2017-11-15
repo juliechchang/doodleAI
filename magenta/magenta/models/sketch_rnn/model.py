@@ -37,7 +37,7 @@ def get_default_hparams():
   hparams = tf.contrib.training.HParams(
       data_set=['aaron_sheep.npz'],  # Our dataset.
       num_steps=10000000,  # Total number of steps of training. Keep large.
-      save_every=500,  # Number of batches per checkpoint creation.
+      save_every=5000,  # Number of batches per checkpoint creation.
       max_seq_len=250,  # Not used. Will be changed by model. [Eliminate?]
       dec_rnn_size=512,  # Size of decoder.
       dec_model='lstm',  # Decoder: lstm, layer_norm or hyper.
