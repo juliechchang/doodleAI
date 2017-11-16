@@ -113,15 +113,13 @@ def decode(sample_model_var, session_var, z_input=None, draw_mode=True, temperat
     draw_strokes(strokes, factor)
   return strokes
 
-#set up first model
+#DRAW FIRST PART OF SKETCH
 model_dir_1 = 'checkpoint_path/mosquito'
 [hps_model_1, eval_hps_model_1, sample_hps_model_1] = load_model(model_dir_1)
-# construct the sketch-rnn model here:
 reset_graph()
 model_1 = Model(hps_model_1)
 eval_model_1 = Model(eval_hps_model_1, reuse=True)
 sample_model_1 = Model(sample_hps_model_1, reuse=True)
-
 sess_1 = tf.InteractiveSession()
 sess_1.run(tf.global_variables_initializer())
 # loads the weights from checkpoint into our model
@@ -130,11 +128,46 @@ load_checkpoint(sess_1, model_dir_1)
 #get some sample strokes
 results = []
 sample_strokes_1, m,final_state,final_x = sample(sess_1, sample_model_1, seq_len=50, temperature=0.5, z=None) #final_state,final_x
-#x = sample(sess_1, sample_model_1, seq_len=5, temperature=0.5, z=None) #final_state,final_x
-#print(sample_strokes_1)
 strokes_1 = to_normal_strokes(sample_strokes_1)
+sketch_1 = [draw_strokes(strokes_1, 0.2),[0, 0]]
+results.append(sketch_1) # append to draw out in sequence
 
 
+#ATTEMPTING TO ENCODE INITIAL SKETCH (not currently working)
+#sample_strokes_1 = test_set.random_sample()
+#encode generated strokes to a hidden state h
+strokes_h = to_big_strokes(sketch_1).tolist()
+strokes_h.insert(0, [0, 0, 1, 0, 0])
+seq_len = [len(sketch_1)]
+draw_strokes(to_normal_strokes(np.array(strokes_h)))
+h_1 = sess_1.run(eval_model_1.batch_z, feed_dict={eval_model_1.input_data: [strokes_h], eval_model_1.sequence_lengths: seq_len})[0]
+#h_1 is now a latent vector
+
+
+model_dir_2 = 'checkpoint_path/cat'
+[hps_model_2, eval_hps_model_2, sample_hps_model_2] = load_model(model_dir_2)
+reset_graph()
+model_2 = Model(hps_model_2)
+eval_model_2 = Model(eval_hps_model_2, reuse=True)
+sample_model_2 = Model(sample_hps_model_2, reuse=True)
+sess_2 = tf.InteractiveSession()
+sess_2.run(tf.global_variables_initializer())
+load_checkpoint(sess_2, model_dir_2)
+
+sample_strokes_2, m = continue_sample(strokes_so_far=[], start_state=final_state, start_x=final_x, sess=sess_2, model=sample_model_2, seq_len=50, temperature=0.5, z=h_1)
+strokes_2 = to_normal_strokes(sample_strokes_2)
+sketch_2 = [draw_strokes(strokes_2, 0.2),[0, 1]]
+results.append(sketch_2) # append to draw out in 
+
+stroke_grid = make_grid_svg(results)
+draw_strokes(stroke_grid)
+
+#javascript program
+#update the model at each step with set of strokes so far
+#the new rnn state is the lstm.foward with the new input
+
+
+'''
 #set up second model
 model_dir_2 = 'checkpoint_path/cat'
 [hps_model_2, eval_hps_model_2, sample_hps_model_2] = load_model(model_dir_2)
@@ -156,12 +189,11 @@ strokes_2 = to_normal_strokes(sample_strokes_2)
 #print(all_strokes)
 #full_sketch = [draw_strokes(all_strokes, 0.2),[0, 2]]
 #results.append(full_sketch)
-sketch_1 = [draw_strokes(strokes_1, 0.2),[0, 0]]
-results.append(sketch_1) # append to draw out in sequence
-sketch_2 = [draw_strokes(strokes_2, 0.2),[0, 1]]
-results.append(sketch_2) # append to draw out in 
 stroke_grid = make_grid_svg(results)
 draw_strokes(stroke_grid)
+'''
+
+
 
 
 
