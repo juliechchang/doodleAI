@@ -52,7 +52,7 @@ def draw_strokes(data, factor=0.2, svg_filename = '/tmp/sketch_rnn/svg/sample.sv
     y = float(data[i,1])/factor
     lift_pen = data[i, 2]
     p += command+str(x)+","+str(y)+" "
-  the_color = random.choice(["black","red","blue","green","orange"])
+  the_color = "black" #random.choice(["black","red","blue","green","orange"])
   stroke_width = 1
   dwg.add(dwg.path(p).stroke(the_color,stroke_width).fill("none"))
   dwg.save()
@@ -133,8 +133,7 @@ sample_strokes_1, m,final_state,final_x = sample(sess_1, sample_model_1, seq_len
 #x = sample(sess_1, sample_model_1, seq_len=5, temperature=0.5, z=None) #final_state,final_x
 #print(sample_strokes_1)
 strokes_1 = to_normal_strokes(sample_strokes_1)
-sketch_1 = [draw_strokes(strokes_1, 0.2),[0, 0]]
-results.append(sketch_1) # append to draw out in sequence
+
 
 #set up second model
 model_dir_2 = 'checkpoint_path/cat'
@@ -148,17 +147,19 @@ sess_2.run(tf.global_variables_initializer())
 load_checkpoint(sess_2, model_dir_2)
 
 #sample_strokes_1 is a partway sketch that has not been converted to normal strokes
-sample_strokes_2, m = continue_sample(final_state, final_x, sess_2, sample_model_2, seq_len=50, temperature=0.5, z=None)
+sample_strokes_2, m = continue_sample(strokes_so_far=sample_strokes_1, start_state=final_state, start_x=final_x, sess=sess_2, model=sample_model_2, seq_len=50, temperature=0.5, z=None)
 #print(sample_strokes_2)
 strokes_2 = to_normal_strokes(sample_strokes_2)
+
+
+#all_strokes = np.concatenate((sample_strokes_1,sample_strokes_2),axis=0)
+#print(all_strokes)
+#full_sketch = [draw_strokes(all_strokes, 0.2),[0, 2]]
+#results.append(full_sketch)
+sketch_1 = [draw_strokes(strokes_1, 0.2),[0, 0]]
+results.append(sketch_1) # append to draw out in sequence
 sketch_2 = [draw_strokes(strokes_2, 0.2),[0, 1]]
 results.append(sketch_2) # append to draw out in 
-
-all_strokes = np.concatenate((sample_strokes_1,sample_strokes_2),axis=0)
-#print(all_strokes)
-full_sketch = [draw_strokes(all_strokes, 0.2),[0, 2]]
-results.append(full_sketch)
-
 stroke_grid = make_grid_svg(results)
 draw_strokes(stroke_grid)
 

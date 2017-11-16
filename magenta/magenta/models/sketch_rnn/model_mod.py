@@ -468,7 +468,7 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
 
   return strokes, mixture_params, prev_state, prev_x
 
-def continue_sample(start_state, start_x, sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
+def continue_sample(strokes_so_far, start_state, start_x, sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
            z=None):
   """Samples a sequence from a pre-trained model."""
 
@@ -503,23 +503,17 @@ def continue_sample(start_state, start_x, sess, model, seq_len=250, temperature=
     x = np.random.multivariate_normal(mean, cov, 1)
     return x[0][0], x[0][1]
 
-  prev_x = start_x #np.zeros((1, 1, 5), dtype=np.float32)
-  #prev_x[0, 0, 2] = 1  # initially, we want to see beginning of new stroke
-  #if z is None:
-  #  z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
-
+  prev_x = start_x 
   prev_state = start_state
-  #if not model.hps.conditional:
-  #  prev_state = sess.run(model.initial_state)
-  #else:
-  #  prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
 
-  strokes = np.zeros((seq_len, 5), dtype=np.float32)
+  new_strokes = np.zeros((seq_len, 5), dtype=np.float32)
+  strokes = np.concatenate((strokes_so_far,new_strokes),axis=0)
+  len_so_far = len(strokes_so_far)
   mixture_params = []
   greedy = False
   temp = 1.0
 
-  for i in range(seq_len):
+  for i in range(len_so_far,len_so_far+seq_len):
     if not model.hps.conditional:
       feed = {
           model.input_x: prev_x,
@@ -573,5 +567,5 @@ def continue_sample(start_state, start_x, sess, model, seq_len=250, temperature=
         [next_x1, next_x2, eos[0], eos[1], eos[2]], dtype=np.float32)
     prev_state = next_state
 
-  return strokes, mixture_params, prev_state, prev_x #final state
+  return strokes, mixture_params
 
