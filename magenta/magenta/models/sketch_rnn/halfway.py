@@ -52,7 +52,7 @@ def draw_strokes(data, factor=0.2, svg_filename = '/tmp/sketch_rnn/svg/sample.sv
     y = float(data[i,1])/factor
     lift_pen = data[i, 2]
     p += command+str(x)+","+str(y)+" "
-  the_color = "black"
+  the_color = random.choice(["black","red","blue","green","orange"])
   stroke_width = 1
   dwg.add(dwg.path(p).stroke(the_color,stroke_width).fill("none"))
   dwg.save()
@@ -113,6 +113,7 @@ def decode(sample_model_var, session_var, z_input=None, draw_mode=True, temperat
     draw_strokes(strokes, factor)
   return strokes
 
+#set up first model
 model_dir_1 = 'checkpoint_path/mosquito'
 [hps_model_1, eval_hps_model_1, sample_hps_model_1] = load_model(model_dir_1)
 # construct the sketch-rnn model here:
@@ -126,27 +127,40 @@ sess_1.run(tf.global_variables_initializer())
 # loads the weights from checkpoint into our model
 load_checkpoint(sess_1, model_dir_1)
 
-#model_dir_2 = 'checkpoint_path/cat'
-#[hps_model_2, eval_hps_model_2, sample_hps_model_2] = load_model(model_dir_2)
-# construct the sketch-rnn model here:
-#reset_graph()
-#model_2 = Model(hps_model_2)
-#eval_model_2 = Model(eval_hps_model_2, reuse=True)
-#sample_model_2 = Model(sample_hps_model_2, reuse=True)
-#sess_2 = tf.InteractiveSession()
-#sess_2.run(tf.global_variables_initializer())
-#load_checkpoint(sess_2, model_dir_2)
+#get some sample strokes
+results = []
+sample_strokes_1, m,final_state,final_x = sample(sess_1, sample_model_1, seq_len=50, temperature=0.5, z=None) #final_state,final_x
+#x = sample(sess_1, sample_model_1, seq_len=5, temperature=0.5, z=None) #final_state,final_x
+#print(sample_strokes_1)
+strokes_1 = to_normal_strokes(sample_strokes_1)
+sketch_1 = [draw_strokes(strokes_1, 0.2),[0, 0]]
+results.append(sketch_1) # append to draw out in sequence
 
-# randomly unconditionally generate 10 half-examples
-N = 5
-reconstructions = []
-for i in range(N):
-  reconstructions.append([decode(sample_model_var=sample_model_1,session_var= sess_1,temperature=0.5, draw_mode=False), [0, i]])
-stroke_grid = make_grid_svg(reconstructions)
+#set up second model
+model_dir_2 = 'checkpoint_path/cat'
+[hps_model_2, eval_hps_model_2, sample_hps_model_2] = load_model(model_dir_2)
+reset_graph()
+model_2 = Model(hps_model_2)
+eval_model_2 = Model(eval_hps_model_2, reuse=True)
+sample_model_2 = Model(sample_hps_model_2, reuse=True)
+sess_2 = tf.InteractiveSession()
+sess_2.run(tf.global_variables_initializer())
+load_checkpoint(sess_2, model_dir_2)
+
+#sample_strokes_1 is a partway sketch that has not been converted to normal strokes
+sample_strokes_2, m = continue_sample(final_state, final_x, sess_2, sample_model_2, seq_len=50, temperature=0.5, z=None)
+#print(sample_strokes_2)
+strokes_2 = to_normal_strokes(sample_strokes_2)
+sketch_2 = [draw_strokes(strokes_2, 0.2),[0, 1]]
+results.append(sketch_2) # append to draw out in 
+
+all_strokes = np.concatenate((sample_strokes_1,sample_strokes_2),axis=0)
+#print(all_strokes)
+full_sketch = [draw_strokes(all_strokes, 0.2),[0, 2]]
+results.append(full_sketch)
+
+stroke_grid = make_grid_svg(results)
 draw_strokes(stroke_grid)
-
-
-
 
 
 
