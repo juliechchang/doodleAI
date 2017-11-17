@@ -413,7 +413,7 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
   else:
     prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
 
-  states = [prev_state]
+  states = []
   strokes = np.zeros((seq_len, 5), dtype=np.float32)
   mixture_params = []
   greedy = False
@@ -475,44 +475,13 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
 
   return strokes, mixture_params, states, prev_x
 
-def compute_hidden_states(sess, model, temperature=1.0, greedy_mode=False,
-           z=None, input_strokes, prev_state=None, prev_x=None):
-  # computes the chain of hidden states from an input set of strokes
-
-  def adjust_temp(pi_pdf, temp):
-    pi_pdf = np.log(pi_pdf) / temp
-    pi_pdf -= pi_pdf.max()
-    pi_pdf = np.exp(pi_pdf)
-    pi_pdf /= pi_pdf.sum()
-    return pi_pdf
-
-  def get_pi_idx(x, pdf, temp=1.0, greedy=False):
-    """Samples from a pdf, optionally greedily."""
-    if greedy:
-      return np.argmax(pdf)
-    pdf = adjust_temp(np.copy(pdf), temp)
-    accumulate = 0
-    for i in range(0, pdf.size):
-      accumulate += pdf[i]
-      if accumulate >= x:
-        return i
-    tf.logging.info('Error with sampling ensemble.')
-    return -1
-
-  def sample_gaussian_2d(mu1, mu2, s1, s2, rho, temp=1.0, greedy=False):
-    if greedy:
-      return mu1, mu2
-    mean = [mu1, mu2]
-    s1 *= temp * temp
-    s2 *= temp * temp
-    cov = [[s1 * s1, rho * s1 * s2], [rho * s1 * s2, s2 * s2]]
-    x = np.random.multivariate_normal(mean, cov, 1)
-    return x[0][0], x[0][1]
+def get_hidden_states(sess, model, input_strokes, seq_len=250,
+           z=None, prev_state=None, prev_x=None):
+  """Samples a sequence from a pre-trained model."""
 
   if prev_x is None:
     prev_x = np.zeros((1, 1, 5), dtype=np.float32)
     prev_x[0, 0, 2] = 1  # initially, we want to see beginning of new stroke
-
 
   if z is None:
     z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
@@ -524,13 +493,10 @@ def compute_hidden_states(sess, model, temperature=1.0, greedy_mode=False,
   else:
     prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
 
-  states = [prev_state]
-  strokes = np.zeros((seq_len, 5), dtype=np.float32)
+  states = []
   mixture_params = []
-  greedy = False
-  temp = 1.0
 
-  for i in range(seq_len):
+  for i in range(len(input_strokes)):
     if not model.hps.conditional:
       feed = {
           model.input_x: prev_x,
@@ -552,24 +518,6 @@ def compute_hidden_states(sess, model, temperature=1.0, greedy_mode=False,
 
     [o_pi, o_mu1, o_mu2, o_sigma1, o_sigma2, o_corr, o_pen, next_state] = params
 
-    if i < 0:
-      greedy = False
-      temp = 1.0
-    else:
-      greedy = greedy_mode
-      temp = temperature
-
-    idx = get_pi_idx(random.random(), o_pi[0], temp, greedy)
-
-    idx_eos = get_pi_idx(random.random(), o_pen[0], temp, greedy)
-    eos = [0, 0, 0]
-    eos[idx_eos] = 1
-
-    next_x1, next_x2 = sample_gaussian_2d(o_mu1[0][idx], o_mu2[0][idx],
-                                          o_sigma1[0][idx], o_sigma2[0][idx],
-                                          o_corr[0][idx], np.sqrt(temp), greedy)
-
-    strokes[i, :] = [next_x1, next_x2, eos[0], eos[1], eos[2]]
 
     params = [
         o_pi[0], o_mu1[0], o_mu2[0], o_sigma1[0], o_sigma2[0], o_corr[0],
@@ -580,11 +528,12 @@ def compute_hidden_states(sess, model, temperature=1.0, greedy_mode=False,
 
     prev_x = np.zeros((1, 1, 5), dtype=np.float32)
     prev_x[0][0] = np.array(
-        [next_x1, next_x2, eos[0], eos[1], eos[2]], dtype=np.float32)
+        input_strokes[i], dtype=np.float32)
     prev_state = next_state
     states.append(prev_state)
 
-  return mixture_params, states, prev_x
+  return mixture_params, states
+
 
 def continue_sample(strokes_so_far, start_state, start_x, sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
            z=None):

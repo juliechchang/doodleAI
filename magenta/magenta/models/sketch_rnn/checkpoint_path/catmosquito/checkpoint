@@ -1,0 +1,2 @@
+model_checkpoint_path: "vector-85000"
+all_model_checkpoint_paths: "vector-85000"
