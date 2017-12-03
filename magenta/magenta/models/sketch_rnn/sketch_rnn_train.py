@@ -23,7 +23,7 @@ import time
 import urllib
 import zipfile
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+# os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # internal imports
 
