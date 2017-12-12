@@ -9,7 +9,7 @@ import tensorflow as tf
 
 # from magenta.models.sketch_rnn import rnn
 import rnn
-import cnn_fn
+import cnn_tf
 
 def copy_hparams(hparams):
   """Return a copy of an HParams instance."""
