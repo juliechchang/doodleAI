@@ -1,15 +1,35 @@
+#modified model
+#
+
+# Copyright 2017 Google Inc. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Sketch-RNN Model."""
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
 import random
 
+# internal imports
+
 import numpy as np
 import tensorflow as tf
 
 # from magenta.models.sketch_rnn import rnn
 import rnn
-import cnn_tf
+import cnn_tf as cnn
 
 def copy_hparams(hparams):
   """Return a copy of an HParams instance."""
@@ -19,16 +39,17 @@ def copy_hparams(hparams):
 def get_default_hparams():
   """Return default HParams for sketch-rnn."""
   hparams = tf.contrib.training.HParams(
-      data_set=['aaron_sheep.npz'],  # Our dataset.
+      data_set=['cat_half.npz'],  # Our dataset.
+      ims_set=['cat_half.npy'],   # CNN npy datasets
       num_steps=10000000,  # Total number of steps of training. Keep large.
-      save_every=5000,  # Number of batches per checkpoint creation.
+      save_every=500,  # Number of batches per checkpoint creation.
       max_seq_len=250,  # Not used. Will be changed by model. [Eliminate?]
       dec_rnn_size=512,  # Size of decoder.
       dec_model='lstm',  # Decoder: lstm, layer_norm or hyper.
       enc_rnn_size=256,  # Size of encoder.
       enc_model='lstm',  # Encoder: lstm, layer_norm or hyper.
       z_size=128,  # Size of latent vector z. Recommend 32, 64 or 128.
-      kl_weight=0.5,  # KL weight of loss equation. Recommend 0.5 or 1.0.
+      kl_weight=0.0,  # KL weight of loss equation. Recommend 0.5 or 1.0.
       kl_weight_start=0.01,  # KL start weight when annealing.
       kl_tolerance=0.2,  # Level of KL loss at which to stop optimizing for KL.
       batch_size=100,  # Minibatch size. Recommend leaving at 100.
@@ -47,7 +68,8 @@ def get_default_hparams():
       random_scale_factor=0.15,  # Random scaling data augmention proportion.
       augment_stroke_prob=0.10,  # Point dropping augmentation proportion.
       conditional=True,  # When False, use unconditional decoder-only model.
-      is_training=True  # Is model training? Recommend keeping true.
+      is_training=True,  # Is model training? Recommend keeping true.
+      enc_CNN=False # Use a CNN encoder instead?
   )
   return hparams
 
@@ -73,62 +95,68 @@ class Model(object):
         tf.logging.info('Model using gpu.')
         self.build_model(hps)
 
-  def cnn_encoder():
-    final_tensor = cnn_fn.cnn_model_fn( #returns forward and backward tensors
-        self.enc_cell_fw,
-        self.enc_cell_bw,
-        batch,
-        sequence_length=sequence_lengths,
-        time_major=False,
-        swap_memory=True,
-        dtype=tf.float32,
-        scope='ENC_RNN')
-
 
   def encoder(self, batch, sequence_lengths):
     """Define the bi-directional encoder module of sketch-rnn."""
-
-    #A tuple (outputs, output_states) 
-    #outputs: A tuple (output_fw, output_bw) containing the forward and the backward rnn output Tensor.
-    #output_states: A tuple (output_state_fw, output_state_bw) containing the forward and the backward final states of bidirectional rnn.
+    mu = 0
+    presig = 0
     
-    unused_outputs, last_states = tf.nn.bidirectional_dynamic_rnn( #returns forward and backward tensors
-        self.enc_cell_fw,
-        self.enc_cell_bw,
-        batch,
-        sequence_length=sequence_lengths,
-        time_major=False,
-        swap_memory=True,
-        dtype=tf.float32,
-        scope='ENC_RNN')
-
-    #print(last_states)
-    last_state_fw, last_state_bw = last_states #split the tuple
-    #we can do this in theano
-
-    #gets outputs of the final states
-    last_h_fw = self.enc_cell_fw.get_output(last_state_fw)
-    last_h_bw = self.enc_cell_bw.get_output(last_state_bw)
-
-
-    last_h = tf.concat([last_h_fw, last_h_bw], 1)
+    # adding CNN option
+    if self.hps.enc_CNN:
+        last_h = cnn_model(batch)
+        mu = rnn.super_linear(
+            last_h,
+            self.hps.z_size,
+            scope='ENC_CNN_mu',
+            init_w='gaussian',
+            weight_start=0.001)
+        presig = rnn.super_linear(
+            last_h,
+            self.hps.z_size,
+            scope='ENC_CNN_sigma',
+            init_w='gaussian',
+            weight_start=0.001)
     
+    # bi-directional RNN
+    else:
+        #A tuple (outputs, output_states) 
+        #outputs: A tuple (output_fw, output_bw) containing the forward and the backward rnn output Tensor.
+        #output_states: A tuple (output_state_fw, output_state_bw)
+        # containing the forward and the backward final states of bidirectional rnn.
+        unused_outputs, last_states = tf.nn.bidirectional_dynamic_rnn( #returns forward and backward tensors
+            self.enc_cell_fw,
+            self.enc_cell_bw,
+            batch,
+            sequence_length=sequence_lengths,
+            time_major=False,
+            swap_memory=True,
+            dtype=tf.float32,
+            scope='ENC_RNN')
 
+        #print(last_states)
+        last_state_fw, last_state_bw = last_states #split the tuple
+        #we can do this in theano
 
-    mu = rnn.super_linear(
-        last_h,
-        self.hps.z_size,
-        input_size=self.hps.enc_rnn_size * 2,  # bi-dir, so x2
-        scope='ENC_RNN_mu',
-        init_w='gaussian',
-        weight_start=0.001)
-    presig = rnn.super_linear(
-        last_h,
-        self.hps.z_size,
-        input_size=self.hps.enc_rnn_size * 2,  # bi-dir, so x2
-        scope='ENC_RNN_sigma',
-        init_w='gaussian',
-        weight_start=0.001)
+        #gets outputs of the final states
+        last_h_fw = self.enc_cell_fw.get_output(last_state_fw)
+        last_h_bw = self.enc_cell_bw.get_output(last_state_bw)
+        last_h = tf.concat([last_h_fw, last_h_bw], 1)
+    
+        mu = rnn.super_linear(
+            last_h,
+            self.hps.z_size,
+            input_size=self.hps.enc_rnn_size * 2,  # bi-dir, so x2
+            scope='ENC_RNN_mu',
+            init_w='gaussian',
+            weight_start=0.001)
+        presig = rnn.super_linear(
+            last_h,
+            self.hps.z_size,
+            input_size=self.hps.enc_rnn_size * 2,  # bi-dir, so x2
+            scope='ENC_RNN_sigma',
+            init_w='gaussian',
+            weight_start=0.001)
+        
     return mu, presig
 
   def build_model(self, hps):
@@ -136,8 +164,6 @@ class Model(object):
     if hps.is_training:
       self.global_step = tf.Variable(0, name='global_step', trainable=False)
 
-    #cell_fn (decoder cell)
-    #SET UP CNN CELL
     if hps.dec_model == 'lstm':
       cell_fn = rnn.LSTMCell
     elif hps.dec_model == 'layer_norm':
@@ -147,7 +173,6 @@ class Model(object):
     else:
       assert False, 'please choose a respectable cell'
 
-    #enc_cell_fn (encoder cell)
     if hps.enc_model == 'lstm':
       enc_cell_fn = rnn.LSTMCell
     elif hps.enc_model == 'layer_norm':
@@ -161,13 +186,11 @@ class Model(object):
     use_input_dropout = self.hps.use_input_dropout
     use_output_dropout = self.hps.use_output_dropout
 
-    #set up decoder cell
     cell = cell_fn(
         hps.dec_rnn_size,
         use_recurrent_dropout=use_recurrent_dropout,
         dropout_keep_prob=self.hps.recurrent_dropout_prob)
 
-    #set up encoder cell
     if hps.conditional:  # vae mode:
       if hps.enc_model == 'hyper':
         self.enc_cell_fw = enc_cell_fn(
@@ -209,6 +232,9 @@ class Model(object):
     self.input_data = tf.placeholder(
         dtype=tf.float32,
         shape=[self.hps.batch_size, self.hps.max_seq_len + 1, 5])
+    self.input_ims = tf.placeholder(
+        dtype=tf.float32,
+        shape=[self.hps.batch_size, 48, 48])
 
     # The target/expected vectors of strokes
     self.output_x = self.input_data[:, 1:self.hps.max_seq_len + 1, :]
@@ -218,8 +244,14 @@ class Model(object):
 
     # either do vae-bit and get z, or do unconditional, decoder-only
     if hps.conditional:  # vae mode:
-      self.mean, self.presig = self.encoder(self.output_x,
+      if hps.enc_CNN:
+        # use different data for CNN encoder
+        self.mean, self.presig = self.encoder(self.input_ims,
                                             self.sequence_lengths)
+      else:
+        self.mean, self.presig = self.encoder(self.output_x,
+                                            self.sequence_lengths)
+      
       self.sigma = tf.exp(self.presig / 2.0)  # sigma > 0. div 2.0 -> sqrt.
       eps = tf.random_normal(
           (self.hps.batch_size, self.hps.z_size), 0.0, 1.0, dtype=tf.float32)
@@ -253,7 +285,7 @@ class Model(object):
     # Number of outputs is 3 (one logit per pen state) plus 6 per mixture
     # component: mean_x, stdev_x, mean_y, stdev_y, correlation_xy, and the
     # mixture weight/probability (Pi_k)
-    n_out = (3 + self.num_mixture * 6) #output (Gaussian * 6 + 3 for logits)
+    n_out = (3 + self.num_mixture * 6)
 
     with tf.variable_scope('RNN'):
       output_w = tf.get_variable('output_w', [self.hps.dec_rnn_size, n_out])
@@ -378,7 +410,7 @@ class Model(object):
 
 
 def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
-           z=None):
+           z=None, prev_state=None, prev_x=None):
   """Samples a sequence from a pre-trained model."""
 
   def adjust_temp(pi_pdf, temp):
@@ -411,16 +443,22 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
     x = np.random.multivariate_normal(mean, cov, 1)
     return x[0][0], x[0][1]
 
-  prev_x = np.zeros((1, 1, 5), dtype=np.float32)
-  prev_x[0, 0, 2] = 1  # initially, we want to see beginning of new stroke
+  if prev_x is None:
+    prev_x = np.zeros((1, 1, 5), dtype=np.float32)
+    prev_x[0, 0, 2] = 1  # initially, we want to see beginning of new stroke
+
+
   if z is None:
     z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
 
   if not model.hps.conditional:
-    prev_state = sess.run(model.initial_state)
+    if prev_state is None:
+      prev_state = sess.run(model.initial_state)
+
   else:
     prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
 
+  states = []
   strokes = np.zeros((seq_len, 5), dtype=np.float32)
   mixture_params = []
   greedy = False
@@ -465,6 +503,168 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
                                           o_sigma1[0][idx], o_sigma2[0][idx],
                                           o_corr[0][idx], np.sqrt(temp), greedy)
 
+    strokes[i, :] = [next_x1, next_x2, eos[0], eos[1], eos[2]]
+
+    params = [
+        o_pi[0], o_mu1[0], o_mu2[0], o_sigma1[0], o_sigma2[0], o_corr[0],
+        o_pen[0]
+    ]
+
+    mixture_params.append(params)
+
+    prev_x = np.zeros((1, 1, 5), dtype=np.float32)
+    prev_x[0][0] = np.array(
+        [next_x1, next_x2, eos[0], eos[1], eos[2]], dtype=np.float32)
+    prev_state = next_state
+    states.append(prev_state)
+
+  return strokes, mixture_params, states, prev_x
+
+def get_hidden_states(sess, model, input_strokes, seq_len=250,
+           z=None, prev_state=None, prev_x=None):
+  """Samples a sequence from a pre-trained model."""
+
+  if prev_x is None:
+    prev_x = np.zeros((1, 1, 5), dtype=np.float32)
+    prev_x[0, 0, 2] = 1  # initially, we want to see beginning of new stroke
+
+  if z is None:
+    z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
+
+  if not model.hps.conditional:
+    if prev_state is None:
+      prev_state = sess.run(model.initial_state)
+
+  else:
+    prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
+
+  states = []
+  mixture_params = []
+
+  for i in range(len(input_strokes)):
+    if not model.hps.conditional:
+      feed = {
+          model.input_x: prev_x,
+          model.sequence_lengths: [1],
+          model.initial_state: prev_state
+      }
+    else:
+      feed = {
+          model.input_x: prev_x,
+          model.sequence_lengths: [1],
+          model.initial_state: prev_state,
+          model.batch_z: z
+      }
+
+    params = sess.run([
+        model.pi, model.mu1, model.mu2, model.sigma1, model.sigma2, model.corr,
+        model.pen, model.final_state
+    ], feed)
+
+    [o_pi, o_mu1, o_mu2, o_sigma1, o_sigma2, o_corr, o_pen, next_state] = params
+
+
+    params = [
+        o_pi[0], o_mu1[0], o_mu2[0], o_sigma1[0], o_sigma2[0], o_corr[0],
+        o_pen[0]
+    ]
+
+    mixture_params.append(params)
+
+    prev_x = np.zeros((1, 1, 5), dtype=np.float32)
+    prev_x[0][0] = np.array(
+        input_strokes[i], dtype=np.float32)
+    prev_state = next_state
+    states.append(prev_state)
+
+  return mixture_params, states
+
+
+def continue_sample(strokes_so_far, start_state, start_x, sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
+           z=None):
+  """Samples a sequence from a pre-trained model."""
+
+  def adjust_temp(pi_pdf, temp):
+    pi_pdf = np.log(pi_pdf) / temp
+    pi_pdf -= pi_pdf.max()
+    pi_pdf = np.exp(pi_pdf)
+    pi_pdf /= pi_pdf.sum()
+    return pi_pdf
+
+  def get_pi_idx(x, pdf, temp=1.0, greedy=False):
+    """Samples from a pdf, optionally greedily."""
+    if greedy:
+      return np.argmax(pdf)
+    pdf = adjust_temp(np.copy(pdf), temp)
+    accumulate = 0
+    for i in range(0, pdf.size):
+      accumulate += pdf[i]
+      if accumulate >= x:
+        return i
+    tf.logging.info('Error with sampling ensemble.')
+    return -1
+
+  def sample_gaussian_2d(mu1, mu2, s1, s2, rho, temp=1.0, greedy=False):
+    
+    if greedy:
+      return mu1, mu2
+    mean = [mu1, mu2]
+    s1 *= temp * temp
+    s2 *= temp * temp
+    cov = [[s1 * s1, rho * s1 * s2], [rho * s1 * s2, s2 * s2]]
+    x = np.random.multivariate_normal(mean, cov, 1)
+    return x[0][0], x[0][1]
+
+  prev_x = start_x 
+  prev_state = start_state
+
+  new_strokes = np.zeros((seq_len, 5), dtype=np.float32)
+  strokes = np.concatenate((strokes_so_far,new_strokes),axis=0)
+  len_so_far = len(strokes_so_far)
+  mixture_params = []
+  greedy = False
+  temp = 1.0
+
+  for i in range(len_so_far,len_so_far+seq_len):
+    if not model.hps.conditional:
+      feed = {
+          model.input_x: prev_x,
+          model.sequence_lengths: [1],
+          model.initial_state: prev_state
+      }
+    else:
+      feed = {
+          model.input_x: prev_x,
+          model.sequence_lengths: [1],
+          model.initial_state: prev_state,
+          model.batch_z: z
+      }
+
+    params = sess.run([
+        model.pi, model.mu1, model.mu2, model.sigma1, model.sigma2, model.corr,
+        model.pen, model.final_state
+    ], feed)
+
+    [o_pi, o_mu1, o_mu2, o_sigma1, o_sigma2, o_corr, o_pen, next_state] = params
+
+    if i < 0:
+      greedy = False
+      temp = 1.0
+    else:
+      greedy = greedy_mode
+      temp = temperature
+
+    idx = get_pi_idx(random.random(), o_pi[0], temp, greedy)
+
+    idx_eos = get_pi_idx(random.random(), o_pen[0], temp, greedy)
+    eos = [0, 0, 0]
+    eos[idx_eos] = 1
+
+    next_x1, next_x2 = sample_gaussian_2d(o_mu1[0][idx], o_mu2[0][idx],
+                                          o_sigma1[0][idx], o_sigma2[0][idx],
+                                          o_corr[0][idx], np.sqrt(temp), greedy)
+
+    #the stroke vector is an array of size 5 arrays
     strokes[i, :] = [next_x1, next_x2, eos[0], eos[1], eos[2]]
 
     params = [

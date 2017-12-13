@@ -298,10 +298,15 @@ class DataLoader(object):
     # We return three things: stroke-3 format, stroke-5 format, list of seq_len.
     return x_batch, self.pad_batch(x_batch, self.max_seq_length), seq_len
 
-  def random_batch(self):
+  def random_batch(self, cnn_ims=None):
     """Return a randomised portion of the training data."""
     idx = np.random.permutation(range(0, len(self.strokes)))[0:self.batch_size]
-    return self._get_batch_from_indices(idx)
+    x3, x5, s = self._get_batch_from_indices(idx)
+    ims = None
+    if cnn_ims is not None:
+        ims = cnn_ims[idx, :]
+    
+    return x3, x5, s, ims
 
   def get_batch(self, idx):
     """Get the idx'th batch from the dataset."""
@@ -310,6 +315,14 @@ class DataLoader(object):
     start_idx = idx * self.batch_size
     indices = range(start_idx, start_idx + self.batch_size)
     return self._get_batch_from_indices(indices)
+
+  def get_ims_batch(cnn_ims, idx):
+    """Get the idx'th batch from the ims dataset."""
+    assert idx >= 0, "idx must be non negative"
+    assert idx < self.num_batches, "idx must be less than the number of batches"
+    start_idx = idx * self.batch_size
+    indices = range(start_idx, start_idx + self.batch_size)
+    return cnn_ims[indices,:] 
 
   def pad_batch(self, batch, max_len):
     """Pad the batch to be stroke-5 bigger format as described in paper."""

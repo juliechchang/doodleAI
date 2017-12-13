@@ -23,7 +23,7 @@ import time
 import urllib
 import zipfile
 
-os.environ["CUDA_VISIBLE_DEVICES"]="1"
+# os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # internal imports
 
@@ -35,7 +35,7 @@ import tensorflow as tf
 
 #from magenta.models.sketch_rnn import model as sketch_rnn_model
 #from magenta.models.sketch_rnn import utils
-import model as sketch_rnn_model
+import model_cnn_tf as sketch_rnn_model
 import utils
 
 
@@ -222,15 +222,45 @@ def load_dataset(data_dir, model_params, inference_mode=False):
   ]
   return result
 
+def load_ims(data_dir, model_params):
+    """Loads the .npy file, and splits the set into train/valid/test."""
+    imsets = []
+    if isinstance(model_params.ims_set, list):
+        imsets = model_params.ims_set
+    else:
+        imsets = [model_params.ims_set]
 
-def evaluate_model(sess, model, data_set):
+    train_ims = None
+    valid_ims = None
+    test_ims = None
+    for imset in imsets:
+        data_filepath = os.path.join(data_dir, imset)
+        data = np.load(data_filepath)
+        tf.logging.info('Loaded {}/{}/{} from {}'.format(
+            len(data[0]), len(data[1]), len(data[2]),
+            imset))
+    if train_ims is None:
+      train_ims = data[0]/255.
+      valid_ims = data[1]/255.
+      test_ims = data[2]/255.
+    else:
+      train_ims = np.concatenate((train_ims, data[0]))
+      valid_ims = np.concatenate((valid_ims, data[1]))
+      test_ims = np.concatenate((test_ims, data[2]))
+
+    result = [train_ims, valid_ims, test_ims]
+    return result
+    
+
+def evaluate_model(sess, model, data_set, data_ims):
   """Returns the average weighted cost, reconstruction cost and KL cost."""
   total_cost = 0.0
   total_r_cost = 0.0
   total_kl_cost = 0.0
   for batch in range(data_set.num_batches):
     unused_orig_x, x, s = data_set.get_batch(batch)
-    feed = {model.input_data: x, model.sequence_lengths: s}
+    ims = get_ims_batch(data_ims, batch)
+    feed = {model.input_data: x, model.input_ims: ims, model.sequence_lengths: s}
     (cost, r_cost,
      kl_cost) = sess.run([model.cost, model.r_cost, model.kl_cost], feed)
     total_cost += cost
@@ -258,7 +288,7 @@ def save_model(sess, model_save_path, global_step):
   saver.save(sess, checkpoint_path, global_step=global_step)
 
 
-def train(sess, model, eval_model, train_set, valid_set, test_set):
+def train(sess, model, eval_model, train_set, valid_set, test_set, train_ims, valid_ims, test_ims):
   """Train a sketch-rnn model."""
   # Setup summary writer.
   summary_writer = tf.summary.FileWriter(FLAGS.log_root)
@@ -295,9 +325,11 @@ def train(sess, model, eval_model, train_set, valid_set, test_set):
     curr_kl_weight = (hps.kl_weight - (hps.kl_weight - hps.kl_weight_start) *
                       (hps.kl_decay_rate)**step)
 
-    _, x, s = train_set.random_batch()
+    _, x, s, ims = train_set.random_batch(cnn_ims=train_ims)
+     
     feed = {
         model.input_data: x,
+        model.input_ims: ims,
         model.sequence_lengths: s,
         model.lr: curr_learning_rate,
         model.kl_weight: curr_kl_weight
@@ -350,7 +382,7 @@ def train(sess, model, eval_model, train_set, valid_set, test_set):
     if step % hps.save_every == 0 and step > 0:
 
       (valid_cost, valid_r_cost, valid_kl_cost) = evaluate_model(
-          sess, eval_model, valid_set)
+          sess, eval_model, valid_set, valid_ims)
 
       end = time.time()
       time_taken_valid = end - start
@@ -402,7 +434,7 @@ def train(sess, model, eval_model, train_set, valid_set, test_set):
         summary_writer.flush()
 
         (eval_cost, eval_r_cost, eval_kl_cost) = evaluate_model(
-            sess, eval_model, test_set)
+            sess, eval_model, test_set, test_ims)
 
         end = time.time()
         time_taken_eval = end - start
@@ -451,6 +483,11 @@ def trainer(model_params):
   model_params = datasets[3]
   eval_model_params = datasets[4]
 
+  imsets = load_ims(FLAGS.data_dir, model_params) # loads the data for CNN encoder
+  train_ims = imsets[0]
+  valid_ims = imsets[1]
+  test_ims = imsets[2]
+
   reset_graph()
   model = sketch_rnn_model.Model(model_params)
   eval_model = sketch_rnn_model.Model(eval_model_params, reuse=True)
@@ -467,7 +504,7 @@ def trainer(model_params):
       os.path.join(FLAGS.log_root, 'model_config.json'), 'w') as f:
     json.dump(model_params.values(), f, indent=True)
 
-  train(sess, model, eval_model, train_set, valid_set, test_set)
+  train(sess, model, eval_model, train_set, valid_set, test_set, train_ims, valid_ims, test_ims)
 
 
 def main(unused_argv):
