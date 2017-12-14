@@ -308,21 +308,18 @@ class DataLoader(object):
     
     return x3, x5, s, ims
 
-  def get_batch(self, idx):
+  def get_batch(self, idx, cnn_ims=None):
     """Get the idx'th batch from the dataset."""
     assert idx >= 0, "idx must be non negative"
     assert idx < self.num_batches, "idx must be less than the number of batches"
     start_idx = idx * self.batch_size
     indices = range(start_idx, start_idx + self.batch_size)
-    return self._get_batch_from_indices(indices)
+    x3, x5, s = self._get_batch_from_indices(indices)
+    ims = None
+    if cnn_ims is not None:
+        ims = cnn_ims[indices,:] 
+    return x3, x5, s, ims
 
-  def get_ims_batch(cnn_ims, idx):
-    """Get the idx'th batch from the ims dataset."""
-    assert idx >= 0, "idx must be non negative"
-    assert idx < self.num_batches, "idx must be less than the number of batches"
-    start_idx = idx * self.batch_size
-    indices = range(start_idx, start_idx + self.batch_size)
-    return cnn_ims[indices,:] 
 
   def pad_batch(self, batch, max_len):
     """Pad the batch to be stroke-5 bigger format as described in paper."""

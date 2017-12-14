@@ -239,14 +239,14 @@ def load_ims(data_dir, model_params):
         tf.logging.info('Loaded {}/{}/{} from {}'.format(
             len(data[0]), len(data[1]), len(data[2]),
             imset))
-    if train_ims is None:
-      train_ims = data[0]/255.
-      valid_ims = data[1]/255.
-      test_ims = data[2]/255.
-    else:
-      train_ims = np.concatenate((train_ims, data[0]))
-      valid_ims = np.concatenate((valid_ims, data[1]))
-      test_ims = np.concatenate((test_ims, data[2]))
+        if train_ims is None:
+          train_ims = data[0]/255.
+          valid_ims = data[1]/255.
+          test_ims = data[2]/255.
+        else:
+          train_ims = np.concatenate((train_ims, data[0]/255.))
+          valid_ims = np.concatenate((valid_ims, data[1]/255.))
+          test_ims = np.concatenate((test_ims, data[2]/255.))
 
     result = [train_ims, valid_ims, test_ims]
     return result
@@ -258,8 +258,7 @@ def evaluate_model(sess, model, data_set, data_ims):
   total_r_cost = 0.0
   total_kl_cost = 0.0
   for batch in range(data_set.num_batches):
-    unused_orig_x, x, s = data_set.get_batch(batch)
-    ims = get_ims_batch(data_ims, batch)
+    unused_orig_x, x, s , ims = data_set.get_batch(batch, cnn_ims = data_ims)
     feed = {model.input_data: x, model.input_ims: ims, model.sequence_lengths: s}
     (cost, r_cost,
      kl_cost) = sess.run([model.cost, model.r_cost, model.kl_cost], feed)
