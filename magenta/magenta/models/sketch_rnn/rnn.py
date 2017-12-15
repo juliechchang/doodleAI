@@ -126,7 +126,7 @@ def layer_norm_all(h,
                    base,
                    num_units,
                    scope='layer_norm',
-                   reuse=False,
+                   reuse=True,
                    gamma_start=1.0,
                    epsilon=1e-3,
                    use_bias=True):

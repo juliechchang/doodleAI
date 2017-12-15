@@ -411,9 +411,11 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
       prev_state = sess.run(model.initial_state)
 
   else:
-    prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
+    if prev_state is None:
+      prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
 
   states = []
+  xs=[]
   strokes = np.zeros((seq_len, 5), dtype=np.float32)
   mixture_params = []
   greedy = False
@@ -472,8 +474,9 @@ def sample(sess, model, seq_len=250, temperature=1.0, greedy_mode=False,
         [next_x1, next_x2, eos[0], eos[1], eos[2]], dtype=np.float32)
     prev_state = next_state
     states.append(prev_state)
+    xs.append(prev_x)
 
-  return strokes, mixture_params, states, prev_x
+  return strokes, mixture_params, states, xs
 
 def get_hidden_states(sess, model, input_strokes, seq_len=250,
            z=None, prev_state=None, prev_x=None):
@@ -486,12 +489,11 @@ def get_hidden_states(sess, model, input_strokes, seq_len=250,
   if z is None:
     z = np.random.randn(1, model.hps.z_size)  # not used if unconditional
 
-  if not model.hps.conditional:
-    if prev_state is None:
+  if prev_state is None:
+    if not model.hps.conditional:    
       prev_state = sess.run(model.initial_state)
-
-  else:
-    prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
+    else:
+      prev_state = sess.run(model.initial_state, feed_dict={model.batch_z: z})
 
   states = []
   mixture_params = []

@@ -30,7 +30,8 @@ from utils import *
 from rnn import *
 
 # little function that displays vector images and saves them to .svg
-def draw_strokes(data, factor=0.2, svg_filename = '/tmp/sketch_rnn/svg/sample.svg'):
+def draw_strokes(data, factor=0.2, svg_filename = '/svg/sample.svg'):
+
   tf.gfile.MakeDirs(os.path.dirname(svg_filename))
   min_x, max_x, min_y, max_y = get_bounds(data, factor)
   dims = (50 + max_x - min_x, 50 + max_y - min_y)
@@ -112,7 +113,7 @@ def decode(z_input=None, draw_mode=True, temperature=0.1, factor=0.2):
     draw_strokes(strokes, factor)
   return strokes
 
-model_dir = 'checkpoint_path/mosquito'
+model_dir = 'checkpoint_path/frog'
 [hps_model, eval_hps_model, sample_hps_model] = load_model(model_dir)
 # construct the sketch-rnn model here:
 reset_graph()
