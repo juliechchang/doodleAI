@@ -103,7 +103,7 @@ class Model(object):
     
     # adding CNN option
     if self.hps.enc_CNN:
-        last_h = cnn_model(batch)
+        last_h = cnn.cnn_model(batch)
         mu = rnn.super_linear(
             last_h,
             self.hps.z_size,
