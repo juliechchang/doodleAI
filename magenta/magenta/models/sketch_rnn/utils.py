@@ -239,9 +239,11 @@ class DataLoader(object):
         seq_len.append(len(data))
     seq_len = np.array(seq_len)  # nstrokes for each sketch
     idx = np.argsort(seq_len)
-    self.strokes = []
-    for i in range(len(seq_len)):
-      self.strokes.append(raw_data[idx[i]])
+    
+    self.strokes = raw_data
+    #for i in range(len(seq_len)):
+    #  self.strokes.append(raw_data[idx[i]])
+ 
     print("total images <= max_seq_len is %d" % count_data)
     self.num_batches = int(count_data / self.batch_size)
 

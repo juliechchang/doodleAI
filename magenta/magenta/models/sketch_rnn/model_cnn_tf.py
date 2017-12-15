@@ -69,7 +69,7 @@ def get_default_hparams():
       augment_stroke_prob=0.10,  # Point dropping augmentation proportion.
       conditional=True,  # When False, use unconditional decoder-only model.
       is_training=True,  # Is model training? Recommend keeping true.
-      enc_CNN=False # Use a CNN encoder instead?
+      enc_CNN=True # Use a CNN encoder instead?
   )
   return hparams
 

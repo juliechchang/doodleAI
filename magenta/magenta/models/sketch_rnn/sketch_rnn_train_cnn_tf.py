@@ -80,6 +80,12 @@ def load_env(data_dir, model_dir):
     model_params.parse_json(f.read())
   return load_dataset(data_dir, model_params, inference_mode=True)
 
+def load_env_ims(data_dir, model_dir):
+  """Loads environment for inference mode, used in jupyter notebook."""
+  model_params = sketch_rnn_model.get_default_hparams()
+  with tf.gfile.Open(os.path.join(model_dir, 'model_config.json'), 'r') as f:
+    model_params.parse_json(f.read())
+  return load_ims(data_dir, model_params)
 
 def load_model(model_dir):
   """Loads model for inference mode, used in jupyter notebook."""
